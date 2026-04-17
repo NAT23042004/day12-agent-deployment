@@ -3,3 +3,9 @@ uvicorn
 pydantic-settings
 redis
 python-multipart
+langchain
+langchain-openai
+langgraph
+python-dotenv
+loguru
+typing-extensions

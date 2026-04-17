@@ -2,20 +2,23 @@ import time
 import signal
 import logging
 import json
+import os
+import sys
 from datetime import datetime, timezone
 from contextlib import asynccontextmanager
+from typing import List
 
 from fastapi import FastAPI, HTTPException, Security, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 import uvicorn
 import redis
+from langchain_core.messages import HumanMessage, AIMessage
 
-from .config import settings
-from .auth import verify_api_key
-from .rate_limiter import check_rate_limit
-from .cost_guard import check_budget
-from utils.mock_llm import ask as llm_ask
+from config import settings
+from auth import verify_api_key
+from rate_limiter import check_rate_limit
+from cost_guard import check_budget
 
 # Logging setup
 logging.basicConfig(
@@ -23,6 +26,20 @@ logging.basicConfig(
     format='{"ts":"%(asctime)s","lvl":"%(levelname)s","msg":"%(message)s"}',
 )
 logger = logging.getLogger(__name__)
+
+# Add the directory containing main.py to sys.path to allow importing src
+sys.path.append(os.path.dirname(__file__))
+
+# Import the real agent graph
+try:
+    from src.agent.agent import graph
+except ImportError as e:
+    logger.error(f"ImportError for agent graph: {e}")
+    # Fallback to relative import if running as a package
+    try:
+        from .src.agent.agent import graph
+    except ImportError:
+        raise e
 
 START_TIME = time.time()
 _is_ready = False
@@ -114,30 +131,44 @@ async def ask(
         "question_len": len(body.question),
     }))
     
-    # Get history from Redis
+    # Prepare history for the agent
     history_key = f"history:{body.user_id}"
-    history = []
-    if r:
-        history = r.lrange(history_key, -10, -1) # Get last 10 messages
+    messages = []
     
-    # In a real app, we'd pass history to the LLM
-    # For this lab, we'll just log it
-    if history:
-        logger.debug(f"User history found: {len(history)} messages")
-        
-    answer = llm_ask(body.question)
-    
-    # Save to Redis (stateless design)
     if r:
-        r.rpush(history_key, f"User: {body.question}")
-        r.rpush(history_key, f"Agent: {answer}")
-        r.expire(history_key, 3600) # Expire history after 1 hour
+        # Get last 10 messages from Redis
+        raw_history = r.lrange(history_key, -10, -1)
+        for msg in raw_history:
+            if msg.startswith("User: "):
+                messages.append(HumanMessage(content=msg[6:]))
+            elif msg.startswith("Agent: "):
+                messages.append(AIMessage(content=msg[7:]))
+    
+    # Add the new question
+    messages.append(HumanMessage(content=body.question))
+    
+    try:
+        # Invoke the real agent graph
+        result = graph.invoke({"messages": messages})
         
-    return AskResponse(
-        answer=answer,
-        model=settings.llm_model,
-        timestamp=datetime.now(timezone.utc).isoformat()
-    )
+        # Extract the final answer
+        final_message = result["messages"][-1]
+        answer = final_message.content
+        
+        # Save to Redis (stateless design)
+        if r:
+            r.rpush(history_key, f"User: {body.question}")
+            r.rpush(history_key, f"Agent: {answer}")
+            r.expire(history_key, 3600) # Expire history after 1 hour
+            
+        return AskResponse(
+            answer=answer,
+            model=settings.llm_model,
+            timestamp=datetime.now(timezone.utc).isoformat()
+        )
+    except Exception as e:
+        logger.error(f"Error invoking agent: {e}")
+        raise HTTPException(status_code=500, detail=f"Error processing your request: {str(e)}")
 
 def handle_sigterm(signum, frame):
     logger.info("Received SIGTERM, shutting down...")

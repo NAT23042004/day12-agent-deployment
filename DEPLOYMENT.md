@@ -34,7 +34,26 @@ curl -X POST https://day12-production-f11f.up.railway.app/ask \
 # Expected: HTTP/1.1 200 OK với câu trả lời từ Agent
 ```
 
-### 4. Rate limiting
+### 4. Advanced: Tìm chuyến bay và khách sạn
+Kiểm tra khả năng gọi tool của Agent.
+```bash
+curl -X POST https://day12-production-f11f.up.railway.app/ask \
+  -H "X-API-Key: my-secret-key" \
+  -H "Content-Type: application/json" \
+  -d '{"user_id": "test", "question": "Tìm giúp tôi chuyến bay từ Hà Nội đi Nha Trang và khách sạn dưới 2 triệu ở đó."}'
+```
+
+### 5. Advanced: Kiểm tra ghi nhớ ngữ cảnh (Stateless with Redis)
+Gửi câu hỏi tiếp theo để xem Agent có nhớ thành phố bạn vừa hỏi không.
+```bash
+curl -X POST https://day12-production-f11f.up.railway.app/ask \
+  -H "X-API-Key: my-secret-key" \
+  -H "Content-Type: application/json" \
+  -d '{"user_id": "test", "question": "Ở đó có khách sạn 5 sao nào không?"}'
+# Agent nên trả lời về khách sạn 5 sao tại Nha Trang (dựa trên câu hỏi trước).
+```
+
+### 6. Rate limiting
 Kiểm tra cơ chế chặn spam (giới hạn 10 request/phút).
 ```bash
 for i in {1..15}; do 
@@ -50,6 +69,7 @@ done
 - **PORT:** `8000` (Assigned by Railway)
 - **REDIS_URL:** `redis://default:VcqbvxeiMyZtPgeEDbZehJODueCSHyLh@redis.railway.internal:6379`
 - **AGENT_API_KEY:** `my-secret-key`
+- **OPENAI_API_KEY:** `sk-proj-xxxx` (Required for real agent)
 - **ENVIRONMENT:** `production`
 - **DEBUG:** `false`
 

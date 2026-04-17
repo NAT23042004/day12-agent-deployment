@@ -1,7 +1,7 @@
 import redis
 import time
 from fastapi import HTTPException
-from .config import settings
+from config import settings
 
 # Redis client
 try:

@@ -22,8 +22,8 @@ RUN groupadd -r appuser && useradd -r -g appuser appuser
 # Copy installed packages from builder
 COPY --from=builder /root/.local /home/appuser/.local
 
-# Copy application code
-COPY app/ app/
+# Copy application code (including src)
+COPY app/ .
 COPY utils/ utils/
 
 # Set environment variables
@@ -38,5 +38,5 @@ USER appuser
 
 EXPOSE 8000
 
-# Start command
-CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
+# Start command (main.py is now at /app/main.py)
+CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}
